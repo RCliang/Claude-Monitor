@@ -87,6 +87,12 @@ app.add_middleware(
 # Serve frontend static files
 frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 if frontend_dist.exists():
+    from starlette.responses import FileResponse
+
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(str(frontend_dist / "index.html"))
+
     app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
 
 

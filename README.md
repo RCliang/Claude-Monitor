@@ -35,43 +35,34 @@ A retro NES/CRT pixel-art style real-time monitoring dashboard for [Claude Code]
 - Python 3.10+
 - Node.js 18+
 
-### Windows
-
-```bat
-start.bat
-```
-
-### Linux
+### One-Click Start
 
 ```bash
+python run.py
+```
+
+This will automatically install dependencies, build the frontend, start the server, and open the browser. Everything runs on a single port (default `8765`).
+
+To use a custom port:
+
+```bash
+python run.py 9000
+```
+
+### Dev Mode (Separate Processes)
+
+If you need hot-reload for frontend development:
+
+```bash
+# Windows
+start.bat
+
+# Linux
 chmod +x start.sh
 ./start.sh
 ```
 
-### Manual Start
-
-```bash
-# Terminal 1 — Backend
-cd backend
-pip install -r requirements.txt
-python -m uvicorn main:app --host 0.0.0.0 --port 8765 --reload
-
-# Terminal 2 — Frontend
-cd frontend
-npm install
-npm run dev
-```
-
-Open http://localhost:3000
-
-### Production Build
-
-```bash
-cd frontend && npm run build && cd ../backend
-python -m uvicorn main:app --host 0.0.0.0 --port 8765
-```
-
-The backend serves the built frontend from `frontend/dist/`.
+This starts backend (`:8765`) and frontend dev server (`:3000`) in separate terminals with live reload.
 
 ## Configuration
 
