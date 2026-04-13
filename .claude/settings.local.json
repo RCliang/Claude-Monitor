@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(pip install:*)",
+      "Bash(powershell:*)",
+      "Bash(findstr /n \"^\")",
+      "Bash(findstr:*)",
+      "Bash(cmd:*)",
+      "mcp__web-search-prime__web_search_prime"
+    ]
+  }
+}
