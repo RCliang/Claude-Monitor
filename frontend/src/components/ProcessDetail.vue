@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { ProcessInfo, TodoItem } from '../composables/useWebSocket'
+import type { ProcessInfo, TodoItem, SubagentInfo } from '../composables/useWebSocket'
 import PixelAvatar from './PixelAvatar.vue'
 
 const props = defineProps<{
@@ -91,6 +91,28 @@ const activeTodos = computed(() => {
 const currentActivity = computed(() => {
   return props.process?.session_info?.current_activity ?? null
 })
+
+const subagents = computed(() => {
+  return props.process?.session_info?.subagents ?? []
+})
+
+const activeSubagents = computed(() => {
+  return subagents.value.filter(s => s.status === 'running')
+})
+
+function formatDuration(ms: number | null) {
+  if (!ms) return '--'
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.floor(ms / 60000)}m${Math.floor((ms % 60000) / 1000)}s`
+}
+
+function formatTokens(n: number | null) {
+  if (!n) return '--'
+  if (n < 1000) return `${n}`
+  if (n < 1000000) return `${(n / 1000).toFixed(1)}K`
+  return `${(n / 1000000).toFixed(1)}M`
+}
 
 const needsUserInput = computed(() => {
   if (!props.process) return false
@@ -303,6 +325,53 @@ function isEditDiff(log: { detail?: string | null; tool_name?: string | null }) 
             </div>
           </div>
         </Transition>
+      </div>
+
+      <!-- Subagents -->
+      <div class="section" v-if="subagents.length">
+        <h3 class="section-title">// SUBAGENTS <span class="sa-count">{{ subagents.length }}</span></h3>
+        <div class="sa-list">
+          <div
+            v-for="sa in subagents"
+            :key="sa.agent_id"
+            class="sa-card"
+            :class="sa.status"
+          >
+            <div class="sa-header">
+              <span class="sa-dot" :class="sa.status"></span>
+              <span class="sa-id">{{ sa.agent_id }}</span>
+              <span class="sa-type-tag" v-if="sa.subagent_type">{{ sa.subagent_type.toUpperCase() }}</span>
+              <span class="sa-status-tag" :class="sa.status">{{ sa.status.toUpperCase() }}</span>
+            </div>
+            <div class="sa-desc" v-if="sa.description">{{ sa.description }}</div>
+            <div class="sa-activity" v-if="sa.current_activity">
+              <span class="sa-activity-marker">▶</span>
+              <span class="sa-activity-text">{{ sa.current_activity }}</span>
+            </div>
+            <div class="sa-meta">
+              <span class="sa-meta-item" v-if="sa.model">
+                <span class="sa-meta-label">MODEL</span>
+                <span class="sa-meta-val">{{ sa.model }}</span>
+              </span>
+              <span class="sa-meta-item">
+                <span class="sa-meta-label">MSG</span>
+                <span class="sa-meta-val">{{ sa.message_count }}</span>
+              </span>
+              <span class="sa-meta-item">
+                <span class="sa-meta-label">TOKENS</span>
+                <span class="sa-meta-val">{{ formatTokens(sa.total_tokens) }}</span>
+              </span>
+              <span class="sa-meta-item">
+                <span class="sa-meta-label">TIME</span>
+                <span class="sa-meta-val">{{ formatDuration(sa.total_duration_ms) }}</span>
+              </span>
+              <span class="sa-meta-item" v-if="sa.total_tool_use_count != null">
+                <span class="sa-meta-label">TOOLS</span>
+                <span class="sa-meta-val">{{ sa.total_tool_use_count }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Logs -->
@@ -675,6 +744,179 @@ function isEditDiff(log: { detail?: string | null; tool_name?: string | null }) 
   color: var(--text-secondary);
   line-height: 1.4;
   word-break: break-word;
+}
+
+/* ===== Subagents ===== */
+.sa-count {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  margin-left: 6px;
+}
+
+.sa-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sa-card {
+  background: var(--bg-primary);
+  border: 2px solid var(--border);
+  border-left: 4px solid var(--text-muted);
+  padding: 8px 10px;
+}
+
+.sa-card.running {
+  border-left-color: var(--success);
+}
+
+.sa-card.completed {
+  border-left-color: var(--accent);
+}
+
+.sa-card.error {
+  border-left-color: var(--danger);
+}
+
+.sa-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.sa-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border: 2px solid;
+}
+
+.sa-dot.running {
+  background: var(--success);
+  border-color: var(--success);
+  box-shadow: 0 0 6px var(--success);
+  animation: sa-blink 1s step-end infinite;
+}
+
+.sa-dot.completed {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.sa-dot.error {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+@keyframes sa-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.sa-id {
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  color: var(--text-primary);
+  letter-spacing: 1px;
+}
+
+.sa-type-tag {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--info);
+  background: var(--info-bg);
+  border: 1px solid var(--info);
+  padding: 1px 6px;
+  letter-spacing: 1px;
+}
+
+.sa-status-tag {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  padding: 1px 6px;
+  border: 1px solid;
+  letter-spacing: 1px;
+  margin-left: auto;
+}
+
+.sa-status-tag.running {
+  color: var(--success);
+  border-color: var(--success);
+  background: var(--success-bg);
+}
+
+.sa-status-tag.completed {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.sa-status-tag.error {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.sa-desc {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.sa-activity {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.sa-activity-marker {
+  color: var(--accent);
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.sa-activity-text {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--text-secondary);
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.sa-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sa-meta-item {
+  display: flex;
+  gap: 3px;
+  align-items: baseline;
+}
+
+.sa-meta-label {
+  font-family: var(--font-pixel);
+  font-size: 6px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.sa-meta-val {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  color: var(--text-primary);
 }
 
 .status-section {

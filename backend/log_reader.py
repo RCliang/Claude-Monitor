@@ -23,6 +23,38 @@ class TodoItem:
 
 
 @dataclass
+class SubagentInfo:
+    agent_id: str
+    slug: Optional[str] = None
+    subagent_type: Optional[str] = None
+    description: Optional[str] = None
+    status: str = "running"  # "completed", "running", "error"
+    message_count: int = 0
+    total_tokens: Optional[int] = None
+    total_duration_ms: Optional[int] = None
+    total_tool_use_count: Optional[int] = None
+    model: Optional[str] = None
+    last_activity: Optional[str] = None
+    current_activity: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "agent_id": self.agent_id,
+            "slug": self.slug,
+            "subagent_type": self.subagent_type,
+            "description": self.description,
+            "status": self.status,
+            "message_count": self.message_count,
+            "total_tokens": self.total_tokens,
+            "total_duration_ms": self.total_duration_ms,
+            "total_tool_use_count": self.total_tool_use_count,
+            "model": self.model,
+            "last_activity": self.last_activity,
+            "current_activity": self.current_activity,
+        }
+
+
+@dataclass
 class LogEntry:
     timestamp: str
     role: str  # "user", "assistant", "tool"
@@ -55,6 +87,7 @@ class SessionInfo:
     recent_logs: list[LogEntry] = field(default_factory=list)
     current_todos: list[TodoItem] = field(default_factory=list)
     current_activity: Optional[str] = None
+    subagents: list['SubagentInfo'] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -69,6 +102,7 @@ class SessionInfo:
             "recent_logs": [log.to_dict() for log in self.recent_logs],
             "current_todos": [t.to_dict() for t in self.current_todos],
             "current_activity": self.current_activity,
+            "subagents": [sa.to_dict() for sa in self.subagents],
         }
 
 
@@ -142,6 +176,124 @@ def _extract_summary(msg: dict) -> tuple[str, str, Optional[str], Optional[str],
     return msg_role, "text", _truncate(str(content)[:100]), None, None
 
 
+def _parse_subagent_file(filepath: Path) -> Optional[SubagentInfo]:
+    """Parse a subagent JSONL file and return summary info."""
+    import time as _time
+
+    mtime = filepath.stat().st_mtime
+    # Skip old files
+    if _time.time() - mtime > 86400:
+        return None
+
+    agent_name = filepath.stem  # e.g. "agent-ae959a1"
+    agent_id = agent_name.replace("agent-", "")
+
+    info = SubagentInfo(agent_id=agent_id)
+    last_assistant_summary = None
+    message_count = 0
+    has_tool_result = False
+    last_entry_type = None
+
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                entry_type = entry.get("type", "")
+                ts = entry.get("timestamp", "")
+                message = entry.get("message", {})
+                last_entry_type = entry_type
+
+                # Extract slug
+                if entry.get("slug") and not info.slug:
+                    info.slug = entry["slug"]
+
+                # Extract model
+                if isinstance(message, dict) and message.get("model") and not info.model:
+                    info.model = message["model"]
+
+                # Extract description from first user message
+                if entry_type == "user" and not info.description:
+                    content = message.get("content", "") if isinstance(message, dict) else ""
+                    if isinstance(content, str) and content and content != "Warmup":
+                        info.description = _truncate(content, 120)
+
+                # Count messages and track last activity
+                if entry_type in ("user", "assistant"):
+                    # Tool results (toolUseResult at top level)
+                    if entry_type == "user" and entry.get("toolUseResult") is not None:
+                        result = entry.get("toolUseResult", {})
+                        has_tool_result = True
+                        if isinstance(result, dict):
+                            # Completion info from main session's Task result
+                            if result.get("status") == "completed":
+                                info.status = "completed"
+                            if result.get("totalDurationMs"):
+                                info.total_duration_ms = result["totalDurationMs"]
+                            if result.get("totalTokens"):
+                                info.total_tokens = result["totalTokens"]
+                            if result.get("totalToolUseCount") is not None:
+                                info.total_tool_use_count = result["totalToolUseCount"]
+                        continue
+                    if entry_type == "user" and entry.get("isMeta"):
+                        continue
+
+                    message_count += 1
+                    if ts:
+                        info.last_activity = ts
+
+                    # Track last assistant activity for current_activity
+                    if entry_type == "assistant" and isinstance(message, dict):
+                        content = message.get("content", [])
+                        if isinstance(content, list):
+                            for c in content:
+                                if isinstance(c, dict):
+                                    if c.get("type") == "tool_use":
+                                        tool_name = c.get("name", "")
+                                        if tool_name == "Task":
+                                            continue
+                                        tool_input = c.get("input", {})
+                                        if isinstance(tool_input, dict):
+                                            if "file_path" in tool_input:
+                                                last_assistant_summary = f"{tool_name}: {tool_input['file_path']}"
+                                            elif "command" in tool_input:
+                                                last_assistant_summary = f"{tool_name}: {tool_input['command']}"
+                                            else:
+                                                last_assistant_summary = tool_name
+                                        else:
+                                            last_assistant_summary = tool_name
+                                    elif c.get("type") == "text":
+                                        text = c.get("text", "")
+                                        if text:
+                                            last_assistant_summary = _truncate(text, 80)
+                                    elif c.get("type") == "thinking":
+                                        thinking = c.get("thinking", "")
+                                        if thinking:
+                                            last_assistant_summary = f"Thinking: {_truncate(thinking, 60)}"
+
+        info.message_count = message_count
+        if last_assistant_summary:
+            info.current_activity = last_assistant_summary
+
+        # Determine status: if not explicitly completed, check last entry
+        if info.status == "running":
+            # If last entry is an assistant text response (not a tool call),
+            # the subagent likely finished its work
+            if last_entry_type == "assistant" and has_tool_result:
+                info.status = "completed"
+
+    except (OSError, UnicodeDecodeError):
+        pass
+
+    return info
+
+
 def _parse_session_jsonl(filepath: Path, max_logs: int = 50) -> SessionInfo:
     """Parse a session JSONL file."""
     session_id = filepath.stem
@@ -169,6 +321,8 @@ def _parse_session_jsonl(filepath: Path, max_logs: int = 50) -> SessionInfo:
     logs: list[LogEntry] = []
     message_count = 0
     current_todos: list[TodoItem] = []
+    task_descriptions: dict[str, dict] = {}  # agent_id -> {description, subagent_type}
+    task_results: dict[str, dict] = {}  # agent_id -> {status, totalDurationMs, totalTokens, totalToolUseCount}
 
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -197,6 +351,16 @@ def _parse_session_jsonl(filepath: Path, max_logs: int = 50) -> SessionInfo:
                     if entry_type == "user" and entry.get("isMeta"):
                         continue
                     if entry_type == "user" and entry.get("toolUseResult") is not None:
+                        # Extract Task completion info from main session
+                        result = entry.get("toolUseResult", {})
+                        if isinstance(result, dict) and result.get("agentId"):
+                            aid = result["agentId"]
+                            task_results[aid] = {
+                                "status": result.get("status", "completed"),
+                                "totalDurationMs": result.get("totalDurationMs"),
+                                "totalTokens": result.get("totalTokens"),
+                                "totalToolUseCount": result.get("totalToolUseCount"),
+                            }
                         continue
 
                     message_count += 1
@@ -219,6 +383,24 @@ def _parse_session_jsonl(filepath: Path, max_logs: int = 50) -> SessionInfo:
                                         for t in todos_input
                                         if isinstance(t, dict)
                                     ]
+                                    break
+
+                    # Track Task tool calls to enrich subagent descriptions
+                    if ctype == "tool_use" and tool_name == "Task":
+                        message_raw = entry.get("message", {})
+                        content_raw = message_raw.get("content", []) if isinstance(message_raw, dict) else []
+                        if isinstance(content_raw, list):
+                            for c in content_raw:
+                                if isinstance(c, dict) and c.get("name") == "Task":
+                                    inp = c.get("input", {})
+                                    if isinstance(inp, dict):
+                                        desc = inp.get("description", "")
+                                        sa_type = inp.get("subagent_type", "")
+                                        if desc:
+                                            task_descriptions[desc] = {
+                                                "description": desc,
+                                                "subagent_type": sa_type,
+                                            }
                                     break
 
                     # Update time tracking
@@ -249,6 +431,38 @@ def _parse_session_jsonl(filepath: Path, max_logs: int = 50) -> SessionInfo:
                     else:
                         session_info.current_activity = _truncate(log.summary, 80)
                     break
+
+            # Load subagents from session subdirectory
+            session_dir = filepath.parent / filepath.stem
+            subagents_dir = session_dir / "subagents"
+            if subagents_dir.exists():
+                for sa_file in subagents_dir.glob("agent-*.jsonl"):
+                    sa = _parse_subagent_file(sa_file)
+                    if sa and sa.message_count > 0:
+                        # Enrich with completion info from parent session's Task results
+                        tr = task_results.get(sa.agent_id)
+                        if tr:
+                            if tr.get("status"):
+                                sa.status = tr["status"]
+                            if tr.get("totalDurationMs"):
+                                sa.total_duration_ms = tr["totalDurationMs"]
+                            if tr.get("totalTokens"):
+                                sa.total_tokens = tr["totalTokens"]
+                            if tr.get("totalToolUseCount") is not None:
+                                sa.total_tool_use_count = tr["totalToolUseCount"]
+                        # Enrich with description from parent session's Task calls
+                        if not sa.description:
+                            for td in task_descriptions.values():
+                                sa.description = td["description"]
+                                if td.get("subagent_type"):
+                                    sa.subagent_type = td["subagent_type"]
+                                break
+                        session_info.subagents.append(sa)
+                # Sort: running first, then by last_activity
+                session_info.subagents.sort(
+                    key=lambda s: (0 if s.status == "running" else 1, s.last_activity or ""),
+                    reverse=True,
+                )
 
     except (OSError, UnicodeDecodeError):
         pass

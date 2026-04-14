@@ -85,6 +85,11 @@ function shortCwd(cwd: string | null) {
             <span>{{ proc.memory_mb }}MB</span>
             <span>│</span>
             <span>{{ formatTime(proc.create_time) }}</span>
+            <template v-if="proc.session_info?.subagents?.length">
+              <span>│</span>
+              <span class="sa-badge" v-if="proc.session_info.subagents.some(s => s.status === 'running')">SA:{{ proc.session_info.subagents.filter(s => s.status === 'running').length }}/{{ proc.session_info.subagents.length }}</span>
+              <span class="sa-badge sa-done" v-else>SA:{{ proc.session_info.subagents.length }}</span>
+            </template>
           </div>
         </div>
       </div>
@@ -268,5 +273,21 @@ function shortCwd(cwd: string | null) {
   font-size: 10px;
   font-family: var(--font-pixel);
   color: var(--text-muted);
+  align-items: center;
+}
+
+.sa-badge {
+  font-size: 7px;
+  color: var(--success);
+  border: 1px solid var(--success);
+  background: var(--success-bg);
+  padding: 0 4px;
+  letter-spacing: 1px;
+}
+
+.sa-badge.sa-done {
+  color: var(--text-muted);
+  border-color: var(--border);
+  background: transparent;
 }
 </style>

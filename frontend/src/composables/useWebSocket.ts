@@ -27,6 +27,22 @@ export interface SessionInfo {
   recent_logs: LogEntry[]
   current_todos: TodoItem[]
   current_activity: string | null
+  subagents: SubagentInfo[]
+}
+
+export interface SubagentInfo {
+  agent_id: string
+  slug: string | null
+  subagent_type: string | null
+  description: string | null
+  status: string
+  message_count: number
+  total_tokens: number | null
+  total_duration_ms: number | null
+  total_tool_use_count: number | null
+  model: string | null
+  last_activity: string | null
+  current_activity: string | null
 }
 
 export interface LogEntry {
