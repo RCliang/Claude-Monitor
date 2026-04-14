@@ -93,8 +93,6 @@ if frontend_dist.exists():
     async def serve_index():
         return FileResponse(str(frontend_dist / "index.html"))
 
-    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
-
 
 # --- REST API ---
 
@@ -164,3 +162,15 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8765, reload=True)
+
+
+# --- Static file catch-all (must be after API/WebSocket routes) ---
+if frontend_dist.exists():
+    @app.get("/{filename:path}")
+    async def serve_static(filename: str):
+        file = frontend_dist / filename
+        if file.is_file():
+            return FileResponse(str(file))
+        return FileResponse(str(frontend_dist / "index.html"))
+
+    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
