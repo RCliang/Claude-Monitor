@@ -75,6 +75,22 @@ class LogEntry:
 
 
 @dataclass
+class TokenUsage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    model: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cache_read_tokens": self.cache_read_tokens,
+            "model": self.model,
+        }
+
+
+@dataclass
 class SessionInfo:
     session_id: str
     project_dir: str
@@ -88,6 +104,9 @@ class SessionInfo:
     current_todos: list[TodoItem] = field(default_factory=list)
     current_activity: Optional[str] = None
     subagents: list['SubagentInfo'] = field(default_factory=list)
+    token_usage: TokenUsage = field(default_factory=TokenUsage)
+    duration_seconds: Optional[int] = None
+    activity_state: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -103,6 +122,9 @@ class SessionInfo:
             "current_todos": [t.to_dict() for t in self.current_todos],
             "current_activity": self.current_activity,
             "subagents": [sa.to_dict() for sa in self.subagents],
+            "token_usage": self.token_usage.to_dict(),
+            "duration_seconds": self.duration_seconds,
+            "activity_state": self.activity_state,
         }
 
 
@@ -323,6 +345,11 @@ def _parse_session_jsonl(filepath: Path, max_logs: int = 50) -> SessionInfo:
     current_todos: list[TodoItem] = []
     task_descriptions: dict[str, dict] = {}  # agent_id -> {description, subagent_type}
     task_results: dict[str, dict] = {}  # agent_id -> {status, totalDurationMs, totalTokens, totalToolUseCount}
+    seen_msg_ids: set[str] = set()
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_cache_read_tokens = 0
+    captured_model: Optional[str] = None
 
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -408,6 +435,22 @@ def _parse_session_jsonl(filepath: Path, max_logs: int = 50) -> SessionInfo:
                         session_info.start_time = ts
                     session_info.last_activity = ts
 
+                    # Token usage tracking from assistant messages
+                    if entry_type == "assistant":
+                        message = entry.get("message", {})
+                        if isinstance(message, dict):
+                            msg_id = message.get("id", "")
+                            usage = message.get("usage", {})
+                            if usage and msg_id:
+                                if msg_id not in seen_msg_ids:
+                                    seen_msg_ids.add(msg_id)
+                                    if usage.get("input_tokens", 0) > 0:
+                                        total_input_tokens += usage.get("input_tokens", 0)
+                                        total_output_tokens += usage.get("output_tokens", 0)
+                                        total_cache_read_tokens += usage.get("cache_read_input_tokens", 0)
+                                        if not captured_model:
+                                            captured_model = message.get("model")
+
                     logs.append(LogEntry(
                         timestamp=ts,
                         role=msg_role,
@@ -421,15 +464,35 @@ def _parse_session_jsonl(filepath: Path, max_logs: int = 50) -> SessionInfo:
             session_info.recent_logs = logs[-max_logs:]
             session_info.current_todos = current_todos
 
-            # Derive current activity from last non-result log
+            # Set token usage
+            session_info.token_usage = TokenUsage(
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                cache_read_tokens=total_cache_read_tokens,
+                model=captured_model,
+            )
+
+            # Calculate duration in seconds
+            if session_info.start_time and session_info.last_activity:
+                try:
+                    start_dt = datetime.fromisoformat(session_info.start_time)
+                    end_dt = datetime.fromisoformat(session_info.last_activity)
+                    session_info.duration_seconds = int((end_dt - start_dt).total_seconds())
+                except (ValueError, TypeError):
+                    pass
+
+            # Derive current activity and state from last non-result log
             for log in reversed(logs):
                 if log.role == "assistant" and log.content_type != "tool_result":
-                    if log.content_type == "tool_use":
+                    if log.content_type == "thinking":
+                        session_info.current_activity = _truncate(log.summary, 80)
+                        session_info.activity_state = "thinking"
+                    elif log.content_type == "tool_use":
                         session_info.current_activity = log.summary
-                    elif log.content_type == "thinking":
-                        session_info.current_activity = f"Thinking: {_truncate(log.summary, 60)}"
+                        session_info.activity_state = "executing"
                     else:
                         session_info.current_activity = _truncate(log.summary, 80)
+                        session_info.activity_state = "responding"
                     break
 
             # Load subagents from session subdirectory
@@ -442,8 +505,10 @@ def _parse_session_jsonl(filepath: Path, max_logs: int = 50) -> SessionInfo:
                         # Enrich with completion info from parent session's Task results
                         tr = task_results.get(sa.agent_id)
                         if tr:
-                            if tr.get("status"):
-                                sa.status = tr["status"]
+                            tr_status = tr.get("status", "")
+                            # Only override status if it's a real completion, not "async_launched"
+                            if tr_status and tr_status not in ("async_launched",):
+                                sa.status = tr_status
                             if tr.get("totalDurationMs"):
                                 sa.total_duration_ms = tr["totalDurationMs"]
                             if tr.get("totalTokens"):

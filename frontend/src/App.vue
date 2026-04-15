@@ -56,7 +56,7 @@ function selectProcess(pid: number) {
       </div>
     </header>
 
-    <Dashboard :stats="stats" />
+    <Dashboard :stats="stats" :processes="processes" />
 
     <main class="main-content">
       <ProcessList

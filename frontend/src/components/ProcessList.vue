@@ -19,6 +19,17 @@ function statusLabel(status: string) {
   }
 }
 
+function activityLabel(proc: ProcessInfo): { text: string; cls: string } {
+  const state = proc.session_info?.activity_state
+  if (proc.status === 'idle') {
+    if (state === 'waiting') return { text: 'WAITING', cls: 'waiting' }
+    return { text: 'IDLE', cls: 'idle' }
+  }
+  if (state === 'thinking') return { text: 'THINKING', cls: 'thinking' }
+  if (state === 'executing') return { text: 'EXECUTING', cls: 'executing' }
+  return { text: 'ACTIVE', cls: 'running' }
+}
+
 function needsUserInput(proc: ProcessInfo) {
   if (proc.status !== 'idle') return false
   const logs = proc.session_info?.recent_logs
@@ -76,7 +87,7 @@ function shortCwd(cwd: string | null) {
             <span class="pid">PID:{{ proc.pid }}</span>
             <span v-if="proc.status === 'running'" class="working-indicator" title="Working"></span>
             <span v-if="needsUserInput(proc)" class="input-indicator" title="Waiting for user input"></span>
-            <span class="status-text" :class="proc.status">{{ statusLabel(proc.status) }}</span>
+            <span class="status-text" :class="activityLabel(proc).cls">{{ activityLabel(proc).text }}</span>
           </div>
           <div class="item-project">{{ proc.project_name || shortCwd(proc.cwd) }}</div>
           <div class="item-meta">
@@ -255,6 +266,28 @@ function shortCwd(cwd: string | null) {
   border-color: var(--warning);
   color: var(--warning);
   background: var(--warning-bg);
+}
+
+.status-text.thinking {
+  border-color: var(--thinking-border);
+  color: var(--thinking);
+  background: var(--thinking-bg);
+  text-shadow: var(--thinking-glow);
+  animation: input-blink 1.2s step-end infinite;
+}
+
+.status-text.executing {
+  border-color: var(--success);
+  color: var(--success);
+  background: var(--success-bg);
+  text-shadow: var(--glow-success);
+}
+
+.status-text.waiting {
+  border-color: var(--info);
+  color: var(--info);
+  background: var(--info-bg);
+  animation: input-blink 1.2s step-end infinite;
 }
 
 .item-project {

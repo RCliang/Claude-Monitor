@@ -10,6 +10,7 @@ const props = defineProps<{
 const expandedLogs = ref<Set<number>>(new Set())
 const sessionExpanded = ref(false)
 const toolkitExpanded = ref(false)
+const subagentsExpanded = ref(true)
 
 interface ToolItem {
   name: string
@@ -88,8 +89,33 @@ const activeTodos = computed(() => {
   return todos.filter(t => t.status !== 'completed')
 })
 
+const todoStats = computed(() => {
+  const todos = props.process?.session_info?.current_todos
+  if (!todos || todos.length === 0) return null
+  const done = todos.filter(t => t.status === 'completed').length
+  const inProgress = todos.filter(t => t.status === 'in_progress').length
+  const pending = todos.filter(t => t.status === 'pending').length
+  const total = todos.length
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0
+  return { done, inProgress, pending, total, percent }
+})
+
 const currentActivity = computed(() => {
   return props.process?.session_info?.current_activity ?? null
+})
+
+const activityState = computed(() => {
+  return props.process?.session_info?.activity_state ?? null
+})
+
+const stateConfig = computed(() => {
+  switch (activityState.value) {
+    case 'thinking': return { icon: '●', label: 'THINKING', cls: 'thinking' }
+    case 'executing': return { icon: '■', label: 'EXECUTING', cls: 'executing' }
+    case 'responding': return { icon: '▶', label: 'RESPONDING', cls: 'responding' }
+    case 'waiting': return { icon: '◇', label: 'WAITING INPUT', cls: 'waiting' }
+    default: return null
+  }
 })
 
 const subagents = computed(() => {
@@ -99,6 +125,24 @@ const subagents = computed(() => {
 const activeSubagents = computed(() => {
   return subagents.value.filter(s => s.status === 'running')
 })
+
+const tokenUsage = computed(() => {
+  return props.process?.session_info?.token_usage ?? null
+})
+
+const durationSec = computed(() => {
+  return props.process?.session_info?.duration_seconds ?? null
+})
+
+function formatSessionDuration(seconds: number | null) {
+  if (!seconds) return '--'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`
+  if (m > 0) return `${m}m${String(s).padStart(2, '0')}s`
+  return `${s}s`
+}
 
 function formatDuration(ms: number | null) {
   if (!ms) return '--'
@@ -278,8 +322,18 @@ function isEditDiff(log: { detail?: string | null; tool_name?: string | null }) 
           <span class="alert-text">WAITING FOR USER INPUT</span>
         </div>
         <div class="activity-line" v-if="currentActivity">
-          <span class="activity-marker">▶</span>
-          <span class="activity-text">{{ currentActivity }}</span>
+          <span class="state-tag" v-if="stateConfig" :class="stateConfig.cls">
+            <span class="state-icon">{{ stateConfig.icon }}</span>
+            {{ stateConfig.label }}
+          </span>
+          <span class="activity-text" :class="{ 'with-state': stateConfig }">{{ currentActivity }}</span>
+        </div>
+        <div class="progress-section" v-if="todoStats">
+          <div class="progress-bar">
+            <div class="progress-fill done" :style="{ width: (todoStats.done / todoStats.total * 100) + '%' }"></div>
+            <div class="progress-fill in-progress" :style="{ width: (todoStats.inProgress / todoStats.total * 100) + '%' }"></div>
+          </div>
+          <span class="progress-label">{{ todoStats.done }}/{{ todoStats.total }} {{ todoStats.percent }}%</span>
         </div>
         <div class="todo-list" v-if="activeTodos.length">
           <div
@@ -327,51 +381,86 @@ function isEditDiff(log: { detail?: string | null; tool_name?: string | null }) 
         </Transition>
       </div>
 
+      <!-- Token Usage -->
+      <div class="token-bar" v-if="tokenUsage">
+        <div class="token-bar-row">
+          <span class="token-kv">
+            <span class="token-label">IN</span>
+            <span class="token-val">{{ formatTokens(tokenUsage.input_tokens) }}</span>
+          </span>
+          <span class="token-sep">│</span>
+          <span class="token-kv">
+            <span class="token-label">OUT</span>
+            <span class="token-val">{{ formatTokens(tokenUsage.output_tokens) }}</span>
+          </span>
+          <span class="token-sep">│</span>
+          <span class="token-kv">
+            <span class="token-label">CACHE</span>
+            <span class="token-val">{{ formatTokens(tokenUsage.cache_read_tokens) }}</span>
+          </span>
+          <span class="token-sep">│</span>
+          <span class="token-kv" v-if="tokenUsage.model">
+            <span class="token-label">MODEL</span>
+            <span class="token-val model-name">{{ tokenUsage.model }}</span>
+          </span>
+          <span class="token-sep" v-if="tokenUsage.model">│</span>
+          <span class="token-kv">
+            <span class="token-label">DURATION</span>
+            <span class="token-val">{{ formatSessionDuration(durationSec) }}</span>
+          </span>
+        </div>
+      </div>
+
       <!-- Subagents -->
       <div class="section" v-if="subagents.length">
-        <h3 class="section-title">// SUBAGENTS <span class="sa-count">{{ subagents.length }}</span></h3>
-        <div class="sa-list">
-          <div
-            v-for="sa in subagents"
-            :key="sa.agent_id"
-            class="sa-card"
-            :class="sa.status"
-          >
-            <div class="sa-header">
-              <span class="sa-dot" :class="sa.status"></span>
-              <span class="sa-id">{{ sa.agent_id }}</span>
-              <span class="sa-type-tag" v-if="sa.subagent_type">{{ sa.subagent_type.toUpperCase() }}</span>
-              <span class="sa-status-tag" :class="sa.status">{{ sa.status.toUpperCase() }}</span>
-            </div>
-            <div class="sa-desc" v-if="sa.description">{{ sa.description }}</div>
-            <div class="sa-activity" v-if="sa.current_activity">
-              <span class="sa-activity-marker">▶</span>
-              <span class="sa-activity-text">{{ sa.current_activity }}</span>
-            </div>
-            <div class="sa-meta">
-              <span class="sa-meta-item" v-if="sa.model">
-                <span class="sa-meta-label">MODEL</span>
-                <span class="sa-meta-val">{{ sa.model }}</span>
-              </span>
-              <span class="sa-meta-item">
-                <span class="sa-meta-label">MSG</span>
-                <span class="sa-meta-val">{{ sa.message_count }}</span>
-              </span>
-              <span class="sa-meta-item">
-                <span class="sa-meta-label">TOKENS</span>
-                <span class="sa-meta-val">{{ formatTokens(sa.total_tokens) }}</span>
-              </span>
-              <span class="sa-meta-item">
-                <span class="sa-meta-label">TIME</span>
-                <span class="sa-meta-val">{{ formatDuration(sa.total_duration_ms) }}</span>
-              </span>
-              <span class="sa-meta-item" v-if="sa.total_tool_use_count != null">
-                <span class="sa-meta-label">TOOLS</span>
-                <span class="sa-meta-val">{{ sa.total_tool_use_count }}</span>
-              </span>
+        <h3 class="section-title clickable" @click="subagentsExpanded = !subagentsExpanded">
+          <span class="section-chevron" :class="{ expanded: subagentsExpanded }">▼</span>
+          // SUBAGENTS <span class="sa-count">{{ subagents.length }}</span>
+        </h3>
+        <Transition name="expand">
+          <div class="sa-list" v-if="subagentsExpanded">
+            <div
+              v-for="sa in subagents"
+              :key="sa.agent_id"
+              class="sa-card"
+              :class="sa.status"
+            >
+              <div class="sa-header">
+                <span class="sa-dot" :class="sa.status"></span>
+                <span class="sa-id">{{ sa.agent_id }}</span>
+                <span class="sa-type-tag" v-if="sa.subagent_type">{{ sa.subagent_type.toUpperCase() }}</span>
+                <span class="sa-status-tag" :class="sa.status">{{ sa.status.toUpperCase() }}</span>
+              </div>
+              <div class="sa-desc" v-if="sa.description">{{ sa.description }}</div>
+              <div class="sa-activity" v-if="sa.current_activity">
+                <span class="sa-activity-marker">▶</span>
+                <span class="sa-activity-text">{{ sa.current_activity }}</span>
+              </div>
+              <div class="sa-meta">
+                <span class="sa-meta-item" v-if="sa.model">
+                  <span class="sa-meta-label">MODEL</span>
+                  <span class="sa-meta-val">{{ sa.model }}</span>
+                </span>
+                <span class="sa-meta-item">
+                  <span class="sa-meta-label">MSG</span>
+                  <span class="sa-meta-val">{{ sa.message_count }}</span>
+                </span>
+                <span class="sa-meta-item">
+                  <span class="sa-meta-label">TOKENS</span>
+                  <span class="sa-meta-val">{{ formatTokens(sa.total_tokens) }}</span>
+                </span>
+                <span class="sa-meta-item">
+                  <span class="sa-meta-label">TIME</span>
+                  <span class="sa-meta-val">{{ formatDuration(sa.total_duration_ms) }}</span>
+                </span>
+                <span class="sa-meta-item" v-if="sa.total_tool_use_count != null">
+                  <span class="sa-meta-label">TOOLS</span>
+                  <span class="sa-meta-val">{{ sa.total_tool_use_count }}</span>
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        </Transition>
       </div>
 
       <!-- Logs -->
@@ -996,6 +1085,90 @@ function isEditDiff(log: { detail?: string | null; tool_name?: string | null }) 
   line-height: 1.5;
 }
 
+.activity-text.with-state {
+  color: var(--text-secondary);
+}
+
+.state-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  padding: 3px 8px;
+  border: 2px solid;
+  letter-spacing: 1px;
+  flex-shrink: 0;
+}
+
+.state-tag.thinking {
+  border-color: var(--thinking-border);
+  color: var(--thinking);
+  background: var(--thinking-bg);
+  animation: blink 1.2s step-end infinite;
+}
+
+.state-tag.executing {
+  border-color: var(--success);
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.state-tag.responding {
+  border-color: var(--info);
+  color: var(--info);
+  background: var(--info-bg);
+}
+
+.state-tag.waiting {
+  border-color: var(--info);
+  color: var(--info);
+  background: var(--info-bg);
+  animation: blink 1.2s step-end infinite;
+}
+
+.state-icon {
+  font-size: 8px;
+}
+
+.progress-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 10px;
+  display: flex;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  transition: width 0.2s step-end;
+}
+
+.progress-fill.done {
+  background: var(--success);
+}
+
+.progress-fill.in-progress {
+  background: var(--warning);
+  animation: blink 1.2s step-end infinite;
+}
+
+.progress-label {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
 .todo-list {
   display: flex;
   flex-direction: column;
@@ -1047,6 +1220,27 @@ function isEditDiff(log: { detail?: string | null; tool_name?: string | null }) 
   color: var(--accent);
   letter-spacing: 2px;
   margin-bottom: 12px;
+}
+
+.section-title.clickable {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.section-title.clickable:hover {
+  color: var(--text-primary);
+}
+
+.section-chevron {
+  font-size: 8px;
+  transition: transform 0.1s step-end;
+}
+
+.section-chevron:not(.expanded) {
+  transform: rotate(-90deg);
 }
 
 .session-bar {
@@ -1109,6 +1303,47 @@ function isEditDiff(log: { detail?: string | null; tool_name?: string | null }) 
   padding-top: 8px;
   margin-top: 8px;
   border-top: 1px dashed var(--border);
+}
+
+.token-bar {
+  padding: 8px 20px;
+  border-bottom: 2px solid var(--border);
+  cursor: default;
+}
+
+.token-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.token-kv {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.token-label {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.token-val {
+  font-size: 10px;
+  font-family: var(--font-pixel);
+  color: var(--accent);
+}
+
+.token-sep {
+  color: var(--border);
+  font-size: 12px;
+}
+
+.model-name {
+  color: var(--text-secondary);
+  font-size: 8px;
 }
 
 .log-list {

@@ -15,6 +15,13 @@ export interface ProcessInfo {
   session_info?: SessionInfo
 }
 
+export interface TokenUsage {
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  model: string | null
+}
+
 export interface SessionInfo {
   session_id: string
   project_dir: string
@@ -28,6 +35,9 @@ export interface SessionInfo {
   current_todos: TodoItem[]
   current_activity: string | null
   subagents: SubagentInfo[]
+  token_usage: TokenUsage
+  duration_seconds: number | null
+  activity_state: string | null
 }
 
 export interface SubagentInfo {
