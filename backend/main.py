@@ -1,76 +1,33 @@
 """FastAPI main entry point for Claude Monitor."""
 
-import asyncio
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from file_watcher import FileWatcherService
 from log_reader import find_active_sessions, get_session_by_cwd
 from scanner import ProcessScanner
+from session_cache import SessionCache
+from updater import DashboardUpdater
 from ws_manager import manager
 
-# Global scanner
+# Global components
 scanner = ProcessScanner()
-
-# Background scan task
-_scan_task: asyncio.Task | None = None
-
-
-async def _scan_loop():
-    """Background task that periodically scans for processes."""
-    while True:
-        try:
-            processes, new_pids, gone_pids = scanner.scan()
-
-            # Broadcast current state
-            process_list = [p.to_dict() for p in processes]
-
-            # Enrich with session info
-            for proc_dict in process_list:
-                if proc_dict.get("cwd"):
-                    session = get_session_by_cwd(proc_dict["cwd"])
-                    if session:
-                        proc_dict["session_info"] = session.to_dict()
-
-            await manager.broadcast("processes", {
-                "processes": process_list,
-                "new_pids": new_pids,
-                "gone_pids": gone_pids,
-            })
-
-            # Send notifications for new/gone processes
-            for pid in new_pids:
-                cp = scanner.get_cached(pid)
-                if cp:
-                    await manager.broadcast("notification", {
-                        "type": "process_started",
-                        "pid": pid,
-                        "project": cp.project_name,
-                        "cwd": cp.cwd,
-                    })
-
-            for pid in gone_pids:
-                await manager.broadcast("notification", {
-                    "type": "process_exited",
-                    "pid": pid,
-                })
-
-        except Exception as e:
-            print(f"Scan error: {e}")
-
-        await asyncio.sleep(3)
+cache = SessionCache()
+file_watcher = FileWatcherService()
+updater = DashboardUpdater(scanner, cache, file_watcher)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _scan_task
-    _scan_task = asyncio.create_task(_scan_loop())
+    await updater.start()
     yield
-    if _scan_task:
-        _scan_task.cancel()
+    await updater.stop()
 
 
 app = FastAPI(title="Claude Monitor", lifespan=lifespan)
@@ -96,24 +53,28 @@ if frontend_dist.exists():
 
 # --- REST API ---
 
+@app.get("/mini", response_class=HTMLResponse)
+async def mini_page():
+    """Self-contained mini dashboard for desktop floating window."""
+    from mini_page import get_mini_html
+    return get_mini_html()
+
+
 @app.get("/api/processes")
 async def get_processes():
     """Get current list of Claude processes."""
-    processes, _, _ = scanner.scan()
-    result = []
-    for p in processes:
-        d = p.to_dict()
-        if p.cwd:
-            session = get_session_by_cwd(p.cwd)
-            if session:
-                d["session_info"] = session.to_dict()
-        result.append(d)
-    return {"processes": result}
+    # Use updater's current state (enriched with cached sessions)
+    process_list = updater.get_current_state()
+    return {"processes": process_list}
 
 
 @app.get("/api/sessions")
 async def get_sessions():
     """Get all active Claude sessions."""
+    # Try cache first, fall back to full scan
+    cached = cache.get_all_sessions()
+    if cached:
+        return {"sessions": [s.to_dict() for s in cached]}
     sessions = find_active_sessions()
     return {"sessions": [s.to_dict() for s in sessions]}
 
@@ -131,14 +92,8 @@ async def get_project_sessions(project_dir: str):
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
-        # Send initial state
-        processes, _, _ = scanner.scan()
-        process_list = [p.to_dict() for p in processes]
-        for proc_dict in process_list:
-            if proc_dict.get("cwd"):
-                session = get_session_by_cwd(proc_dict["cwd"])
-                if session:
-                    proc_dict["session_info"] = session.to_dict()
+        # Send initial state using updater's current state
+        process_list = updater.get_current_state()
 
         await manager.send_to(websocket, "initial", {
             "processes": process_list,
@@ -147,12 +102,11 @@ async def websocket_endpoint(websocket: WebSocket):
         # Keep connection alive, receive client messages
         while True:
             data = await websocket.receive_text()
-            # Handle client requests if needed
-            msg = __import__("json").loads(data)
+            msg = json.loads(data)
             if msg.get("type") == "get_session_logs":
                 cwd = msg.get("cwd")
                 if cwd:
-                    session = get_session_by_cwd(cwd)
+                    session = cache.get_by_cwd(cwd) or get_session_by_cwd(cwd)
                     await manager.send_to(websocket, "session_logs", session.to_dict() if session else {})
 
     except WebSocketDisconnect:

@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {
+    "pm-market-research@pm-skills": true,
+    "pm-toolkit@pm-skills": true,
+    "pm-product-discovery@pm-skills": true,
+    "pm-product-strategy@pm-skills": true
+  }
+}

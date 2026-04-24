@@ -71,10 +71,12 @@ export interface TodoItem {
 }
 
 export interface Notification {
-  type: string
+  type: 'process_started' | 'process_exited' | 'user_input_required' | 'subagent_completed'
   pid?: number
   project?: string
   cwd?: string
+  agent_id?: string
+  description?: string
 }
 
 const processes = ref<ProcessInfo[]>([])

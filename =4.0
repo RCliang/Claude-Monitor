@@ -1,0 +1,27 @@
+Looking in indexes: https://mirrors.aliyun.com/pypi/simple/
+Collecting pywebview
+  Downloading https://mirrors.aliyun.com/pypi/packages/3d/25/9491695c22c4842c5b3903b4dc172e0eecf67a27c0af34a71512c9b76a0a/pywebview-6.2.1-py3-none-any.whl (525 kB)
+     ------------------------------------ 525.5/525.5 kB 185.2 kB/s eta 0:00:00
+Collecting pythonnet (from pywebview)
+  Downloading https://mirrors.aliyun.com/pypi/packages/cd/f1/bfb6811df4745f92f14c47a29e50e89a36b1533130fcc56452d4660bd2d6/pythonnet-3.0.5-py3-none-any.whl (297 kB)
+Collecting proxy_tools (from pywebview)
+  Downloading https://mirrors.aliyun.com/pypi/packages/f2/cf/77d3e19b7fabd03895caca7857ef51e4c409e0ca6b37ee6e9f7daa50b642/proxy_tools-0.1.0.tar.gz (3.0 kB)
+  Preparing metadata (setup.py): started
+  Preparing metadata (setup.py): finished with status 'done'
+Collecting bottle (from pywebview)
+  Downloading https://mirrors.aliyun.com/pypi/packages/83/f6/b55ec74cfe68c6584163faa311503c20b0da4c09883a41e8e00d6726c954/bottle-0.13.4-py2.py3-none-any.whl (103 kB)
+Requirement already satisfied: typing_extensions in c:\users\xpeng\miniconda3\envs\common_env\lib\site-packages (from pywebview) (4.15.0)
+Collecting clr_loader<0.3.0,>=0.2.7 (from pythonnet->pywebview)
+  Downloading https://mirrors.aliyun.com/pypi/packages/c8/61/cf819f8e8bb4d4c74661acf2498ba8d4a296714be3478d21eaabf64f5b9b/clr_loader-0.2.10-py3-none-any.whl (56 kB)
+Requirement already satisfied: cffi>=1.17 in c:\users\xpeng\miniconda3\envs\common_env\lib\site-packages (from clr_loader<0.3.0,>=0.2.7->pythonnet->pywebview) (1.17.1)
+Requirement already satisfied: pycparser in c:\users\xpeng\miniconda3\envs\common_env\lib\site-packages (from cffi>=1.17->clr_loader<0.3.0,>=0.2.7->pythonnet->pywebview) (2.22)
+Building wheels for collected packages: proxy_tools
+  DEPRECATION: Building 'proxy_tools' using the legacy setup.py bdist_wheel mechanism, which will be removed in a future version. pip 25.3 will enforce this behaviour change. A possible replacement is to use the standardized build interface by setting the `--use-pep517` option, (possibly combined with `--no-build-isolation`), or adding a `pyproject.toml` file to the source tree of 'proxy_tools'. Discussion can be found at https://github.com/pypa/pip/issues/6334
+  Building wheel for proxy_tools (setup.py): started
+  Building wheel for proxy_tools (setup.py): finished with status 'done'
+  Created wheel for proxy_tools: filename=proxy_tools-0.1.0-py3-none-any.whl size=2944 sha256=14cf4581dbdaa4109fe77fcd69c4e12b8f8cdb49562b3c9df7e9268f51ee87f5
+  Stored in directory: c:\users\xpeng\appdata\local\pip\cache\wheels\f0\53\da\12ab81c9e0f8adec66c0be50f6844511b570f3e84c57a5e96b
+Successfully built proxy_tools
+Installing collected packages: proxy_tools, bottle, clr_loader, pythonnet, pywebview
+
+Successfully installed bottle-0.13.4 clr_loader-0.2.10 proxy_tools-0.1.0 pythonnet-3.0.5 pywebview-6.2.1

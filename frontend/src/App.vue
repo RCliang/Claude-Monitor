@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useWebSocket } from './composables/useWebSocket'
 import { useTheme } from './composables/useTheme'
+import { useNotifications } from './composables/useNotifications'
+import { useDisplayMode } from './composables/useDisplayMode'
 import Dashboard from './components/Dashboard.vue'
 import ProcessList from './components/ProcessList.vue'
 import ProcessDetail from './components/ProcessDetail.vue'
 import NotificationPanel from './components/NotificationPanel.vue'
+import MiniOverlay from './components/MiniOverlay.vue'
 
 const { processes, notifications, connected } = useWebSocket()
-const { theme, toggle } = useTheme()
+const { theme, toggle: toggleTheme } = useTheme()
+const { settings: notifSettings, permission: notifPermission, updateSettings, requestPermission } = useNotifications()
+const { mode, toggle: toggleMode, setMode } = useDisplayMode()
 const selectedPid = ref<number | null>(null)
 
 const selectedProcess = computed(() => {
@@ -26,46 +31,89 @@ const stats = computed(() => {
 function selectProcess(pid: number) {
   selectedPid.value = pid
 }
+
+function expandFromMini(pid?: number) {
+  setMode('full')
+  if (pid) selectedPid.value = pid
+}
+
+// Keyboard shortcut: Ctrl+M to toggle mode
+function onKeydown(e: KeyboardEvent) {
+  if (e.ctrlKey && e.key === 'm') {
+    e.preventDefault()
+    toggleMode()
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
   <div class="app" :data-theme="theme">
     <!-- CRT scanline overlay (dark only) -->
-    <div class="scanlines" v-if="theme === 'dark'"></div>
+    <div class="scanlines" v-if="theme === 'dark' && mode === 'full'"></div>
 
-    <header class="header">
-      <div class="header-left">
-        <h1 class="logo">
-          <span class="logo-icon">
-            <span class="logo-bracket">[</span>
-            <span class="logo-text">CM</span>
-            <span class="logo-bracket">]</span>
+    <!-- Mini overlay mode -->
+    <MiniOverlay
+      v-if="mode === 'mini'"
+      :processes="processes"
+      :connected="connected"
+      @expand="expandFromMini()"
+      @select-process="(pid: number) => expandFromMini(pid)"
+    />
+
+    <!-- Full mode -->
+    <template v-if="mode === 'full'">
+      <header class="header">
+        <div class="header-left">
+          <h1 class="logo">
+            <span class="logo-icon">
+              <span class="logo-bracket">[</span>
+              <span class="logo-text">CM</span>
+              <span class="logo-bracket">]</span>
+            </span>
+            <span class="logo-title">Claude Monitor</span>
+          </h1>
+          <span class="connection-badge" :class="connected ? 'connected' : 'disconnected'">
+            <span class="badge-icon">{{ connected ? '◆' : '◇' }}</span>
+            {{ connected ? 'ONLINE' : 'OFFLINE' }}
           </span>
-          <span class="logo-title">Claude Monitor</span>
-        </h1>
-        <span class="connection-badge" :class="connected ? 'connected' : 'disconnected'">
-          <span class="badge-icon">{{ connected ? '◆' : '◇' }}</span>
-          {{ connected ? 'ONLINE' : 'OFFLINE' }}
-        </span>
-      </div>
-      <div class="header-right">
-        <button class="theme-toggle" @click="toggle" :title="theme === 'dark' ? 'Switch to light' : 'Switch to dark'">
-          <span class="toggle-icon">{{ theme === 'dark' ? '◉' : '◎' }}</span>
-        </button>
-        <NotificationPanel :notifications="notifications" />
-      </div>
-    </header>
+        </div>
+        <div class="header-right">
+          <button class="mode-toggle" @click="toggleMode" title="Mini mode [Ctrl+M]">
+            <span class="toggle-icon">▪</span>
+          </button>
+          <button class="theme-toggle" @click="toggleTheme" :title="theme === 'dark' ? 'Switch to light' : 'Switch to dark'">
+            <span class="toggle-icon">{{ theme === 'dark' ? '◉' : '◎' }}</span>
+          </button>
+          <NotificationPanel
+            :notifications="notifications"
+            :settings="notifSettings"
+            :permission="notifPermission"
+            @update-settings="updateSettings"
+            @request-permission="requestPermission"
+            @toggle-event="(key: string) => {
+              const events = { ...notifSettings.events }
+              const k = key as keyof typeof events
+              events[k] = !events[k]
+              updateSettings({ events })
+            }"
+          />
+        </div>
+      </header>
 
-    <Dashboard :stats="stats" :processes="processes" />
+      <Dashboard :stats="stats" :processes="processes" />
 
-    <main class="main-content">
-      <ProcessList
-        :processes="processes"
-        :selected-pid="selectedPid"
-        @select="selectProcess"
-      />
-      <ProcessDetail :process="selectedProcess" />
-    </main>
+      <main class="main-content">
+        <ProcessList
+          :processes="processes"
+          :selected-pid="selectedPid"
+          @select="selectProcess"
+        />
+        <ProcessDetail :process="selectedProcess" />
+      </main>
+    </template>
   </div>
 </template>
 
@@ -243,6 +291,31 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* Mode toggle button */
+.mode-toggle {
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 6px 10px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  transition: all 0.1s step-end;
+}
+
+.mode-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mode-toggle:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
 }
 
 /* Theme toggle button */
