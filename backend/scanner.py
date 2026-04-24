@@ -44,8 +44,6 @@ CLAUDE_CLI_PATTERNS = [
     "@anthropic-ai/claude-code",
     "claude-code\\cli",
     "claude-code/cli",
-    "\\claude.exe",
-    "/claude",
 ]
 
 # These are child processes spawned BY Claude Code, not Claude Code itself
@@ -54,18 +52,36 @@ EXCLUDED_PROCESS_NAMES = {"bash", "bash.exe", "sh", "sh.exe", "cmd", "cmd.exe", 
 # CWD patterns to exclude (not real Claude Code CLI sessions)
 EXCLUDED_CWD_PATTERNS = ["trae", "Trae"]
 
+# Command-line patterns that indicate NON-CLI Claude processes
+EXCLUDED_CMDLINE_PATTERNS = [
+    "windowsapps\\claude",       # Claude desktop app (Microsoft Store)
+    "windowsapps\\\\claude",
+    ".trae-cn\\",                # Trae IDE embedded claude
+    ".trae-cn\\\\",
+    "--type=",                   # Chrome/Electron sub-processes (renderer, gpu, etc.)
+    "--claude-in-chrome-mcp",    # Trae's MCP bridge
+]
+
 
 def _is_claude_process(proc: psutil.Process) -> bool:
-    """Check if a process is a Claude Code CLI instance (not a child shell)."""
+    """Check if a process is a Claude Code CLI instance (not a child shell or desktop app)."""
     try:
         name = proc.name().lower()
         # Skip known shell/child processes
         if name in EXCLUDED_PROCESS_NAMES:
             return False
 
-        cmdline = " ".join(proc.cmdline()).lower()
+        cmdline_list = proc.cmdline()
+        cmdline = " ".join(cmdline_list)
+        cmdline_lower = cmdline.lower()
+
+        # Exclude Claude desktop app, Trae, and Electron sub-processes
+        for exc in EXCLUDED_CMDLINE_PATTERNS:
+            if exc.lower() in cmdline_lower:
+                return False
+
         for pattern in CLAUDE_CLI_PATTERNS:
-            if pattern.lower() in cmdline:
+            if pattern.lower() in cmdline_lower:
                 # Exclude processes from specific directories (e.g. Trae CN)
                 try:
                     cwd = (proc.cwd() or "").lower()
@@ -75,9 +91,6 @@ def _is_claude_process(proc: psutil.Process) -> bool:
                 except (psutil.AccessDenied, psutil.NoSuchProcess):
                     pass
                 return True
-        # Direct claude executable (not node wrapper)
-        if name in ("claude", "claude.exe"):
-            return True
         return False
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return False
