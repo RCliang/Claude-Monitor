@@ -153,6 +153,16 @@ closeBtn.addEventListener('click', () => {
   else window.close();
 });
 
+// Sound notification
+let notifyAudio = null;
+function playNotify() {
+  if (!notifyAudio) {
+    notifyAudio = new Audio('/notify.wav');
+  }
+  notifyAudio.currentTime = 0;
+  notifyAudio.play().catch(() => {});
+}
+
 function formatTokens(n) {
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
@@ -243,6 +253,9 @@ function connect() {
     const msg = JSON.parse(e.data);
     if (msg.type === 'initial' || msg.type === 'processes') {
       render(msg.data.processes || []);
+    }
+    if (msg.type === 'notification' && msg.data.type === 'user_input_required') {
+      playNotify();
     }
   };
 

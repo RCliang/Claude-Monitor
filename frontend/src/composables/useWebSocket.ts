@@ -84,6 +84,15 @@ const notifications = ref<Notification[]>([])
 const connected = ref(false)
 let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let notifyAudio: HTMLAudioElement | null = null
+
+function playNotifySound() {
+  if (!notifyAudio) {
+    notifyAudio = new Audio('/notify.wav')
+  }
+  notifyAudio.currentTime = 0
+  notifyAudio.play().catch(() => {})
+}
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -106,6 +115,9 @@ function connect() {
 
       case 'notification':
         notifications.value.push(msg.data)
+        if (msg.data.type === 'user_input_required') {
+          playNotifySound()
+        }
         // Keep only last 50 notifications
         if (notifications.value.length > 50) {
           notifications.value = notifications.value.slice(-50)

@@ -41,7 +41,7 @@ Two-process architecture: Python FastAPI backend + Vue 3 SPA frontend. Communica
 - **`scanner.py`** — `ProcessScanner` class. Uses `psutil` to find Claude Code processes by matching command-line patterns (`@anthropic-ai/claude-code`, `claude-code\cli`, `claude`). Filters out child processes (bash, cmd). Tracks process state changes (new/gone PIDs).
 - **`log_reader.py`** — Parses `~/.claude/projects/*/UUID.jsonl` session log files. Extracts `SessionInfo` including recent logs, current activity, todos, message counts. Only reads files modified within 24 hours.
 - **`ws_manager.py`** — WebSocket connection manager with `broadcast` and `send_to` methods.
-- **`console_writer.py`** — Windows-specific console input writer (not used in web UI flow).
+
 
 Data flow per scan cycle: `scanner.scan()` → enrich each process with `get_session_by_cwd()` → broadcast via WebSocket as `{type: "processes", data: {processes, new_pids, gone_pids}}`.
 

@@ -46,6 +46,9 @@ CLAUDE_CLI_PATTERNS = [
     "claude-code/cli",
 ]
 
+# On macOS/Linux, the CLI binary is simply named "claude"
+CLAUDE_CLI_PROCESS_NAMES = {"claude"}
+
 # These are child processes spawned BY Claude Code, not Claude Code itself
 EXCLUDED_PROCESS_NAMES = {"bash", "bash.exe", "sh", "sh.exe", "cmd", "cmd.exe", "powershell", "powershell.exe"}
 
@@ -79,6 +82,17 @@ def _is_claude_process(proc: psutil.Process) -> bool:
         for exc in EXCLUDED_CMDLINE_PATTERNS:
             if exc.lower() in cmdline_lower:
                 return False
+
+        # On macOS/Linux, CLI is launched via node so cmdline[0] is "claude"
+        if name in CLAUDE_CLI_PROCESS_NAMES or (cmdline_list and cmdline_list[0].lower() in CLAUDE_CLI_PROCESS_NAMES):
+            try:
+                cwd = (proc.cwd() or "").lower()
+                for exc in EXCLUDED_CWD_PATTERNS:
+                    if exc.lower() in cwd:
+                        return False
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                pass
+            return True
 
         for pattern in CLAUDE_CLI_PATTERNS:
             if pattern.lower() in cmdline_lower:

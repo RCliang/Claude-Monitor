@@ -22,7 +22,7 @@ a = Analysis(
         (os.path.join(ROOT, 'backend', 'session_cache.py'), '.'),
         (os.path.join(ROOT, 'backend', 'updater.py'), '.'),
         (os.path.join(ROOT, 'backend', 'mini_page.py'), '.'),
-        (os.path.join(ROOT, 'backend', 'console_writer.py'), '.'),
+
         # Frontend built files
         (os.path.join(ROOT, 'frontend', 'dist'), 'frontend_dist'),
     ],

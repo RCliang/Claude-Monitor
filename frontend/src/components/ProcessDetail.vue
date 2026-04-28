@@ -9,74 +9,7 @@ const props = defineProps<{
 
 const expandedLogs = ref<Set<number>>(new Set())
 const sessionExpanded = ref(false)
-const toolkitExpanded = ref(false)
 const subagentsExpanded = ref(true)
-
-interface ToolItem {
-  name: string
-  desc: string
-}
-
-interface ToolGroup {
-  group: string
-  icon: string
-  items: ToolItem[]
-}
-
-const toolkitData: ToolGroup[] = [
-  {
-    group: 'SKILLS',
-    icon: '⚔',
-    items: [
-      { name: 'algorithmic-art', desc: 'p5.js 算法艺术生成' },
-      { name: 'brand-guidelines', desc: 'Anthropic 品牌色彩/排版' },
-      { name: 'canvas-design', desc: 'PNG/PDF 视觉设计' },
-      { name: 'doc-coauthoring', desc: '文档协作写作工作流' },
-      { name: 'docx', desc: 'Word 文档创建/编辑/分析' },
-      { name: 'frontend-design', desc: '高质量前端界面设计' },
-      { name: 'internal-comms', desc: '内部沟通文档写作' },
-      { name: 'mcp-builder', desc: '构建 MCP Server' },
-      { name: 'pdf', desc: 'PDF 操作工具集' },
-      { name: 'pptx', desc: 'PPT 演示文稿操作' },
-      { name: 'skill-creator', desc: '创建新 Skill' },
-      { name: 'slack-gif-creator', desc: 'Slack 动画 GIF 创建' },
-      { name: 'theme-factory', desc: '主题样式工具包' },
-      { name: 'web-artifacts-builder', desc: '多组件 HTML artifacts' },
-      { name: 'webapp-testing', desc: 'Playwright Web 测试' },
-      { name: 'xlsx', desc: 'Excel 电子表格操作' },
-      { name: 'mermaid-visualizer', desc: 'Mermaid 图表可视化' },
-      { name: 'excalidraw-diagram', desc: 'Excalidraw 图表生成' },
-      { name: 'obsidian-canvas-creator', desc: 'Obsidian Canvas 创建' },
-      { name: 'brainstorming', desc: '创意探索与需求分析' },
-      { name: 'dispatching-parallel-agents', desc: '并行任务调度' },
-      { name: 'executing-plans', desc: '执行实施计划' },
-      { name: 'systematic-debugging', desc: '系统化调试' },
-      { name: 'test-driven-development', desc: '测试驱动开发' },
-      { name: 'writing-plans', desc: '编写实施计划' },
-      { name: 'requesting-code-review', desc: '请求代码审查' },
-      { name: 'usage-query', desc: '查询账户用量' },
-    ]
-  },
-  {
-    group: 'MCP TOOLS',
-    icon: '🛡',
-    items: [
-      { name: 'analyze_image', desc: 'AI 视觉图像分析' },
-      { name: 'webReader', desc: 'URL 转 Markdown 读取' },
-      { name: 'web_search_prime', desc: '网页搜索' },
-      { name: 'analyze_data_visualization', desc: '数据可视化图表分析' },
-      { name: 'analyze_video', desc: '视频内容分析' },
-      { name: 'diagnose_error_screenshot', desc: '错误截图诊断' },
-      { name: 'extract_text_from_screenshot', desc: 'OCR 文字提取' },
-      { name: 'ui_diff_check', desc: 'UI 截图对比' },
-      { name: 'ui_to_artifact', desc: 'UI 截图转代码/规范' },
-      { name: 'understand_technical_diagram', desc: '技术图表解读' },
-      { name: 'get_repo_structure', desc: 'GitHub 仓库目录结构' },
-      { name: 'read_file', desc: 'GitHub 仓库文件读取' },
-      { name: 'search_doc', desc: '仓库文档/Issue 搜索' },
-    ]
-  },
-]
 
 const sortedLogs = computed(() => {
   if (!props.process?.session_info?.recent_logs) return []
@@ -279,12 +212,6 @@ function isEditDiff(log: { detail?: string | null; tool_name?: string | null }) 
               <span class="status-badge" :class="process.status">
                 {{ process.status === 'running' ? '▶ ACTIVE' : '■ IDLE' }}
               </span>
-              <span class="toolkit-toggle" @click.stop="toolkitExpanded = !toolkitExpanded" :class="{ active: toolkitExpanded }">
-                <span class="toolkit-icon">⚙</span>
-                <span class="toolkit-label">TOOLKIT</span>
-                <span class="toolkit-count">{{ toolkitData.reduce((s, g) => s + g.items.length, 0) }}</span>
-                <span class="toolkit-chevron" :class="{ expanded: toolkitExpanded }">▼</span>
-              </span>
             </div>
           </div>
         </div>
@@ -292,25 +219,6 @@ function isEditDiff(log: { detail?: string | null; tool_name?: string | null }) 
           <span class="cwd-prefix">&gt;</span>
           <span class="cwd-value">{{ process.cwd }}</span>
         </div>
-        <Transition name="expand">
-          <div class="toolkit-dropdown" v-if="toolkitExpanded" @click.stop>
-            <div class="toolkit-columns">
-              <div v-for="group in toolkitData" :key="group.group" class="toolkit-group">
-                <div class="toolkit-group-header">
-                  <span class="group-icon">{{ group.icon }}</span>
-                  <span class="group-name">{{ group.group }}</span>
-                  <span class="group-count">{{ group.items.length }}</span>
-                </div>
-                <div class="toolkit-items">
-                  <div v-for="item in group.items" :key="item.name" class="toolkit-item">
-                    <span class="item-name">{{ item.name }}</span>
-                    <span class="item-desc">{{ item.desc }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Transition>
       </div>
 
       <!-- Status Bar -->
@@ -666,173 +574,6 @@ function isEditDiff(log: { detail?: string | null; tool_name?: string | null }) 
   font-family: var(--font-body);
   font-size: 10px;
   word-break: break-all;
-}
-
-/* ===== Toolkit Toggle (in header-meta) ===== */
-.toolkit-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  font-family: var(--font-pixel);
-  font-size: 8px;
-  padding: 3px 10px;
-  border: 2px solid var(--border);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  letter-spacing: 1px;
-  transition: all 0.1s step-end;
-  user-select: none;
-}
-
-.toolkit-toggle:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-bg);
-}
-
-.toolkit-toggle.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-bg);
-}
-
-.toolkit-toggle .toolkit-icon {
-  font-size: 11px;
-  line-height: 1;
-  color: var(--accent);
-  animation: gear-spin 4s linear infinite;
-}
-
-.toolkit-toggle .toolkit-label {
-  font-family: var(--font-pixel);
-  font-size: 8px;
-  letter-spacing: 1px;
-  color: inherit;
-}
-
-.toolkit-toggle .toolkit-count {
-  font-family: var(--font-pixel);
-  font-size: 7px;
-  background: var(--accent);
-  color: var(--text-inverse);
-  padding: 0px 5px;
-  border: 1px solid var(--accent-light);
-}
-
-.toolkit-toggle .toolkit-chevron {
-  font-family: var(--font-pixel);
-  font-size: 7px;
-  color: var(--text-muted);
-  transition: transform 0.1s step-end;
-}
-
-.toolkit-toggle .toolkit-chevron.expanded {
-  transform: rotate(180deg);
-}
-
-@keyframes gear-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* ===== Toolkit Dropdown (inside detail-header) ===== */
-.toolkit-dropdown {
-  margin-top: 10px;
-  background: var(--bg-primary);
-  border: 2px solid var(--border);
-  max-height: 450px;
-  overflow-y: auto;
-}
-
-.toolkit-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-
-.toolkit-group {
-  overflow: hidden;
-}
-
-.toolkit-group:first-child {
-  border-right: 2px dashed var(--border);
-}
-
-.toolkit-group-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px 6px;
-  background: var(--bg-secondary);
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  border-bottom: 2px solid var(--border);
-}
-
-.group-icon {
-  font-size: 14px;
-  line-height: 1;
-}
-
-.group-name {
-  font-family: var(--font-pixel);
-  font-size: 10px;
-  color: var(--accent);
-  letter-spacing: 2px;
-}
-
-.group-count {
-  font-family: var(--font-pixel);
-  font-size: 8px;
-  color: var(--text-muted);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  padding: 1px 6px;
-  margin-left: auto;
-}
-
-.toolkit-items {
-  padding: 6px 8px 10px;
-}
-
-.toolkit-item {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 5px 6px;
-  border-bottom: 1px solid var(--border-light);
-  transition: background 0.1s step-end;
-}
-
-.toolkit-item:hover {
-  background: var(--bg-tertiary);
-}
-
-.toolkit-item:last-child {
-  border-bottom: none;
-}
-
-.item-name {
-  font-family: var(--font-pixel);
-  font-size: 9px;
-  color: var(--info);
-  letter-spacing: 1px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  background: var(--info-bg);
-  border: 1px solid var(--info);
-  padding: 2px 6px;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-
-.item-desc {
-  font-family: var(--font-body);
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.4;
-  word-break: break-word;
 }
 
 /* ===== Subagents ===== */
